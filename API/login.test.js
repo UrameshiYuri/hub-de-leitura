@@ -1,4 +1,4 @@
-const { spec } = require('pactum');
+const { spec } = require('pactum')
 
 it('API deve autenticar usuario corretamente', async () => {
     await spec()
@@ -8,5 +8,5 @@ it('API deve autenticar usuario corretamente', async () => {
             "password": "admin123"
         })
         .expectStatus(200)
-        .expectJson('isAdmin', true)
+        .expectJson('isAdmin', true);
 });
