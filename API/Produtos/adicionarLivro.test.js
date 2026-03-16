@@ -15,15 +15,15 @@ it('Deve adicionar livro com sucesso', async () => {
         .post('http://localhost:3000/api/books')
         .withHeaders('Authorization', `Bearer $S{token}`)
         .withJson({
-            "title": "livro a ser deletado com vscode",
-            "author": "livro a ser deletado",
-            "description": "deletado",
-            "category": "delet",
+            "title": "TURMA DA MÔNICA - TODAS AS COPAS DO MUNDO 2026",
+            "author": "Mauricio De Sousa",
+            "description": "Mauricio de Sousa conta para a turminha a história de todas as Copas do Mundo.A edição 2026 de Todas as Copas do Mundo atualizada com a história da Copa de 2022!",
+            "category": "GIBI",
             "isbn": "404-NOT FOUND",
             "editor": "test",
             "language": "Português",
             "publication_year": 2026,
-            "pages": 312,
+            "pages": 136,
             "format": "Físico",
             "total_copies": 5,
             "available_copies": 5
