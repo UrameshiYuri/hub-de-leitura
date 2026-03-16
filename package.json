@@ -35,5 +35,17 @@
     "open": "^10.2.0",
     "pactum": "^3.9.1",
     "supertest": "^7.1.3"
-  }
+  },
+  "directories": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UrameshiYuri/hub-de-leitura.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/UrameshiYuri/hub-de-leitura/issues"
+  },
+  "homepage": "https://github.com/UrameshiYuri/hub-de-leitura#readme"
 }
