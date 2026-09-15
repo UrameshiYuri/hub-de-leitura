@@ -13,6 +13,7 @@ const { authenticateToken, authenticateAdmin } = require("./middleware/auth");
 
 // Importar todas as rotas
 const booksRoutes = require("./routes/books");
+const couponsRoutes = require("./routes/coupons");
 const usersRoutes = require("./routes/users");
 const reservationsRoutes = require("./routes/reservations");
 const basketRoutes = require("./routes/basket");
@@ -459,6 +460,7 @@ app.post("/api/contact", (req, res) => {
 
 // Rotas principais da API
 app.use("/api/books", booksRoutes);
+app.use("/api/coupons", couponsRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api/reservations", reservationsRoutes);
 app.use("/api/basket", basketRoutes);
