@@ -78,33 +78,30 @@ document.addEventListener("DOMContentLoaded", function () {
                        title="${isAdmin ? 'Painel Admin' : 'Meu Dashboard'}">
                         <i class="fas fa-user-circle me-2" style="font-size: 1.2rem;"></i>
                         <span class="fw-bold">${userName}</span>
-                        ${
-                          isAdmin
-                            ? '<i class="fas fa-crown text-warning ms-1" title="Administrador"></i>'
-                            : ""
-                        }
+                        ${isAdmin
+          ? '<i class="fas fa-crown text-warning ms-1" title="Administrador"></i>'
+          : ""
+        }
                     </a>
                     
                     <!-- Botões de ação -->
                     <div class="user-actions d-flex align-items-center">
-                        ${
-                          !isAdmin
-                            ? `
+                        ${!isAdmin
+          ? `
                             <a href="/dashboard.html" class="btn btn-outline-primary btn-sm me-1" title="Minhas Reservas">
                                 <i class="fas fa-bookmark"></i>
                             </a>
                         `
-                            : ""
-                        }
-                        ${
-                          isAdmin
-                            ? `
+          : ""
+        }
+                        ${isAdmin
+          ? `
                             <a href="/admin-dashboard.html" class="btn btn-outline-secondary btn-sm me-1" title="Painel Admin">
                                 <i class="fas fa-cog"></i>
                             </a>
                         `
-                            : ""
-                        }
+          : ""
+        }
                         <button class="btn btn-outline-danger btn-sm" onclick="performLogout()" title="Sair">
                             <i class="fas fa-sign-out-alt"></i>
                         </button>
@@ -130,126 +127,89 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // Função de logout simplificada
+  // Função de logout
   function performLogout() {
-    console.log("Função performLogout executada");
-
     if (confirm("Tem certeza que deseja sair?")) {
-      console.log("Logout confirmado, limpando dados...");
-
-      // Limpar dados do localStorage
       localStorage.removeItem("authToken");
       localStorage.removeItem("userId");
       localStorage.removeItem("userName");
       localStorage.removeItem("isAdmin");
 
-      console.log("Dados limpos, redirecionando...");
-
-      // Redirecionar
       window.location.href = "/login.html";
     }
   }
 
-  // Tornar função global
-  window.performLogout = performLogout;
-});
+  // Recarregar o header quando o estado de login muda
+  window.refreshHeader = function () {
+    const headerElement = document.getElementById("header");
 
-// Função para atualizar o contador da cesta (VERSÃO SIMPLIFICADA)
-function updateCartCount() {
-  console.log("updateCartCount() chamada");
+    if (!headerElement) return;
 
-  const cart = JSON.parse(localStorage.getItem("bookCart") || "[]");
-  const cartCount = cart.length;
+    return fetch("/header.html")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Não foi possível carregar o cabeçalho.");
+        }
 
-  console.log(`Itens na cesta: ${cartCount}`);
-
-  // Buscar elemento contador
-  const countElement = document.getElementById("cart-count");
-
-  if (countElement) {
-    countElement.textContent = cartCount;
-    console.log(`✅ Contador atualizado: cart-count = ${cartCount}`);
-  } else {
-    console.warn("❌ Elemento cart-count não encontrado!");
-
-    // Tentar encontrar qualquer elemento com classe cart-badge
-    const badgeElement = document.querySelector(".cart-badge");
-    if (badgeElement) {
-      badgeElement.textContent = cartCount;
-      console.log(`✅ Contador atualizado via cart-badge = ${cartCount}`);
-    } else {
-      console.warn("❌ Nenhum elemento contador encontrado!");
-    }
-  }
-}
-
-// Função para ser chamada por outras páginas quando necessário
-window.updateCartCount = function () {
-  console.log("window.updateCartCount() chamada");
-
-  // Chamar a função local diretamente, sem loop
-  const cart = JSON.parse(localStorage.getItem("bookCart") || "[]");
-  const cartCount = cart.length;
-
-  console.log(`Itens na cesta (via window): ${cartCount}`);
-
-  const countElement = document.getElementById("cart-count");
-  if (countElement) {
-    countElement.textContent = cartCount;
-    console.log(`✅ Contador atualizado via window: cart-count = ${cartCount}`);
-  } else {
-    console.warn("❌ Elemento cart-count não encontrado via window!");
-  }
-};
-
-// Escutar mudanças no localStorage para atualizar contador automaticamente
-window.addEventListener("storage", function (e) {
-  if (e.key === "bookCart") {
-    console.log("bookCart mudou no localStorage, atualizando contador...");
-    const cart = JSON.parse(e.newValue || "[]");
-    const countElement = document.getElementById("cart-count");
-    if (countElement) {
-      countElement.textContent = cart.length;
-      console.log(`✅ Contador atualizado via storage event: ${cart.length}`);
-    }
-  }
-});
-
-// Também escutar mudanças na própria página (quando localStorage é alterado na mesma aba)
-const originalSetItem = localStorage.setItem;
-localStorage.setItem = function (key, value) {
-  const result = originalSetItem.apply(this, [key, value]);
-  if (key === "bookCart") {
-    console.log("bookCart alterado via setItem, atualizando contador...");
-    setTimeout(() => {
-      // Chamar função local diretamente
-      const cart = JSON.parse(value || "[]");
-      const countElement = document.getElementById("cart-count");
-      if (countElement) {
-        countElement.textContent = cart.length;
-        console.log(`✅ Contador atualizado via setItem: ${cart.length}`);
-      }
-    }, 100);
-  }
-  return result;
-};
-
-// Função para recarregar o header quando o estado de login muda
-window.refreshHeader = function () {
-  const headerElement = document.getElementById("header");
-  if (headerElement) {
-    // Recarregar o header
-    fetch("/header.html")
-      .then((response) => response.text())
+        return response.text();
+      })
       .then((data) => {
         headerElement.innerHTML = data;
         adaptHeaderForLibrary();
         checkLoginStatus();
 
-        // SEMPRE atualizar contador da cesta
-        setTimeout(() => {
-          updateCartCount();
-        }, 200);
+        return updateCartCount();
+      })
+      .catch((erro) => {
+        console.error("Erro ao atualizar o cabeçalho:", erro);
       });
+  };
+
+  window.performLogout = performLogout;
+}); // Fecha o DOMContentLoaded
+
+// Atualizar o contador com a quantidade de unidades da API
+async function updateCartCount() {
+  const countElement =
+    document.getElementById("cart-count") ||
+    document.querySelector(".cart-badge");
+
+  if (!countElement) return;
+
+  const token = localStorage.getItem("authToken");
+  const userId = Number(localStorage.getItem("userId"));
+
+  if (!token || !Number.isSafeInteger(userId) || userId <= 0) {
+    countElement.textContent = "0";
+    countElement.title = "Quantidade de unidades na cesta";
+    return;
   }
-};
+
+  try {
+    const resposta = await fetch(`/api/basket/${userId}`, {
+      headers: {
+        Authorization: token
+      }
+    });
+
+    if (!resposta.ok) {
+      throw new Error("Não foi possível consultar o contador da cesta.");
+    }
+
+    const dados = await resposta.json();
+    const quantidade = dados.summary.totalUnits;
+
+    if (!Number.isSafeInteger(quantidade) || quantidade < 0) {
+      throw new Error("Quantidade inválida na resposta da API.");
+    }
+
+    countElement.textContent = quantidade;
+    countElement.title = "Quantidade de unidades na cesta";
+  } catch (erro) {
+    countElement.textContent = "—";
+    countElement.title = "Não foi possível atualizar o contador";
+    console.error(erro.message);
+  }
+}
+
+window.updateCartCount = updateCartCount;

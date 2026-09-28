@@ -666,57 +666,74 @@
             }
 
             // Adicionar livro à cesta a partir do catálogo
-            function addToCartFromCatalog(bookId) {
-                // Encontrar dados do livro na lista atual
-                const bookData = currentBooks.find(book => book.id == bookId);
+            async function addToCartFromCatalog(bookId) {
+                const idLivro = Number(bookId);
+                const userId = Number(localStorage.getItem("userId"));
+                const token = localStorage.getItem("authToken");
 
-                if (!bookData) {
-                    showError('Erro ao encontrar dados do livro.');
+                function mostrarMensagem(mensagem, tipo) {
+                    const container = document.getElementById("alert-container");
+                    container.className = `alert alert-${tipo}`;
+                    container.textContent = mensagem;
+                    container.classList.remove("d-none");
+                }
+
+                if (!token || !Number.isSafeInteger(userId) || userId <= 0) {
+                    mostrarMensagem("Faça login para adicionar livros à cesta.", "warning");
                     return;
                 }
 
-                // Preparar dados para a cesta
-                const cartItem = {
-                    id: bookData.id,
-                    title: bookData.title,
-                    author: bookData.author,
-                    category: bookData.category,
-                    cover_image: bookData.cover_image,
-                    notes: ''
-                };
-
-                // Obter cesta atual
-                const cart = JSON.parse(localStorage.getItem('bookCart') || '[]');
-
-                // Verificar se já está na cesta
-                const existingIndex = cart.findIndex(item => item.id === cartItem.id);
-                if (existingIndex !== -1) {
-                    showWarning(`"${bookData.title}" já está na sua cesta!`);
+                if (!Number.isSafeInteger(idLivro) || idLivro <= 0) {
+                    mostrarMensagem("Livro inválido.", "danger");
                     return;
                 }
 
-                // Adicionar à cesta
-                cart.push(cartItem);
-                localStorage.setItem('bookCart', JSON.stringify(cart));
+                const button = document.querySelector(
+                    `.add-to-cart[data-id="${idLivro}"]`
+                );
 
-                showSuccess(`"${bookData.title}" foi adicionado à cesta!`);
+                if (button?.disabled) return;
 
-                // Atualizar visual do botão
-                const button = document.querySelector(`[data-id="${bookId}"]`);
-                if (button && button.classList.contains('add-to-cart')) {
-                    const originalText = button.innerHTML;
-                    button.innerHTML = '<i class="fas fa-check"></i> Adicionado!';
+                const textoOriginal = button?.innerHTML;
+
+                if (button) {
                     button.disabled = true;
-
-                    setTimeout(() => {
-                        button.innerHTML = originalText;
-                        button.disabled = false;
-                    }, 3000);
+                    button.textContent = "Adicionando...";
                 }
 
-                // Atualizar contador no header se existir
-                if (window.updateCartCount) {
-                    window.updateCartCount();
+                try {
+                    const resposta = await fetch("/api/basket", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: token
+                        },
+                        body: JSON.stringify({
+                            userId,
+                            bookId: idLivro,
+                            quantity: 1
+                        })
+                    });
+
+                    const dados = await resposta.json();
+
+                    if (!resposta.ok) {
+                        throw new Error(
+                            dados.message || "Não foi possível adicionar o livro."
+                        );
+                    }
+
+                    mostrarMensagem("Uma unidade adicionada à cesta!", "success");
+                    if (typeof window.updateCartCount === "function") {
+                        await window.updateCartCount();
+                    }
+                } catch (erro) {
+                    mostrarMensagem(erro.message, "danger");
+                } finally {
+                    if (button) {
+                        button.disabled = false;
+                        button.innerHTML = textoOriginal;
+                    }
                 }
             }
 

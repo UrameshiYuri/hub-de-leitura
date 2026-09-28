@@ -233,101 +233,167 @@ app.use(
  */
 
 app.post("/api/login", (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body || {};
 
-  if (!email || !password) {
+  if (
+    typeof email !== "string" ||
+    typeof password !== "string" ||
+    !email.trim() ||
+    !password
+  ) {
     return res.status(400).json({
       message: "Email e senha são obrigatórios.",
-      error: "MISSING_FIELDS",
-      hint: "Forneça tanto email quanto senha no body da requisição",
+      error: "MISSING_FIELDS"
     });
   }
 
-  // Validação básica de formato de email
+  const emailInformado = email.trim();
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
+
+  if (!emailRegex.test(emailInformado)) {
     return res.status(400).json({
       message: "Formato de email inválido.",
-      error: "INVALID_EMAIL_FORMAT",
+      error: "INVALID_EMAIL_FORMAT"
     });
   }
 
-  db.get("SELECT * FROM Users WHERE email = ?", [email], (err, user) => {
-    if (err) {
-      console.error("Erro ao buscar usuário:", err);
-      return res.status(500).json({
-        message: "Erro interno do servidor.",
-        error: "DATABASE_ERROR",
-        timestamp: new Date().toISOString(),
-      });
-    }
+  function erroInterno(erro) {
+    console.error("Erro no login:", erro.message);
 
-    if (!user) {
-      return res.status(401).json({
-        message: "Email ou senha incorretos.",
-        error: "INVALID_CREDENTIALS",
-        hint: "Verifique suas credenciais. Para testes, use: admin@biblioteca.com/admin123 ou usuario@teste.com/user123",
-      });
-    }
-
-    bcrypt.compare(password, user.password, (err, result) => {
-      if (err) {
-        console.error("Erro ao comparar senhas:", err);
-        return res.status(500).json({
-          message: "Erro interno do servidor.",
-          error: "BCRYPT_ERROR",
-          timestamp: new Date().toISOString(),
-        });
-      }
-
-      if (!result) {
-        return res.status(401).json({
-          message: "Email ou senha incorretos.",
-          error: "INVALID_CREDENTIALS",
-          hint: "Verifique suas credenciais. Para testes, use: admin@biblioteca.com/admin123 ou usuario@teste.com/user123",
-        });
-      }
-
-      const tokenPayload = {
-        id: user.id,
-        email: user.email,
-        isAdmin: !!user.isAdmin,
-      };
-
-      const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: "8h" });
-      const bearerToken = `Bearer ${token}`;
-
-      // Log para desenvolvimento
-      if (process.env.NODE_ENV !== "production") {
-        console.log(
-          `✅ Login bem-sucedido: ${user.email} (Admin: ${!!user.isAdmin})`
-        );
-        console.log(`🔑 Token gerado: ${bearerToken.substring(0, 20)}...`);
-      }
-
-      res.json({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        isAdmin: !!user.isAdmin,
-        token: bearerToken, // Para Postman e outras ferramentas
-        token_for_swagger: token, // Apenas o hash para o Swagger
-        expiresIn: "8h",
-        loginTime: new Date().toISOString(),
-        // Instruções úteis para o Swagger
-        swagger_instructions: {
-          step1: "Copie o campo 'token_for_swagger' (sem Bearer)",
-          step2: "Clique no botão 'Authorize' 🔒 no topo da página",
-          step3:
-            "Cole APENAS o hash no campo 'Value' (Swagger adiciona 'Bearer' automaticamente)",
-          step4: "Clique 'Authorize' e depois 'Close'",
-          step5: "Agora você pode usar endpoints protegidos!",
-          postman_note:
-            "Para Postman, use o campo 'token' completo (com Bearer)",
-        },
-      });
+    return res.status(500).json({
+      message: "Erro interno do servidor.",
+      error: "LOGIN_ERROR"
     });
-  });
+  }
+
+  function credenciaisInvalidas() {
+    return res.status(401).json({
+      message: "Email ou senha incorretos.",
+      error: "INVALID_CREDENTIALS"
+    });
+  }
+
+  function responderBloqueio(bloqueadoAte) {
+    return res.status(429).json({
+      message: "Login bloqueado após 3 erros de senha. Tente novamente após o horário informado.",
+      error: "LOGIN_BLOCKED",
+      bloqueado_ate: new Date(bloqueadoAte).toISOString()
+    });
+  }
+
+  db.get(
+    "SELECT * FROM Users WHERE email = ?",
+    [emailInformado],
+    (err, user) => {
+      if (err) return erroInterno(err);
+
+      if (!user) return credenciaisInvalidas();
+
+      if (user.ativo !== 1) {
+        return res.status(403).json({
+          message: "Usuário inativo.",
+          error: "USER_INACTIVE"
+        });
+      }
+
+      if (user.bloqueado_ate > Date.now()) {
+        return responderBloqueio(user.bloqueado_ate);
+      }
+
+      bcrypt.compare(password, user.password, (erro, senhaCorreta) => {
+        if (erro) return erroInterno(erro);
+
+        const agora = Date.now();
+
+        if (!senhaCorreta) {
+          // Após um bloqueio vencido, a contagem recomeça em 1.
+          // O incremento acontece diretamente no banco.
+          const sql = `
+            UPDATE Users
+            SET
+              tentativas_login = CASE
+                WHEN bloqueado_ate IS NOT NULL THEN 1
+                ELSE tentativas_login + 1
+              END,
+              bloqueado_ate = CASE
+                WHEN bloqueado_ate IS NOT NULL THEN NULL
+                WHEN tentativas_login + 1 >= 3 THEN ?
+                ELSE NULL
+              END
+            WHERE id = ?
+              AND ativo = 1
+              AND (bloqueado_ate IS NULL OR bloqueado_ate <= ?)
+          `;
+
+          db.run(
+            sql,
+            [agora + 15 * 60 * 1000, user.id, agora],
+            (erroAtualizacao) => {
+              if (erroAtualizacao) return erroInterno(erroAtualizacao);
+
+              db.get(
+                "SELECT bloqueado_ate FROM Users WHERE id = ?",
+                [user.id],
+                (erroConsulta, estado) => {
+                  if (erroConsulta) return erroInterno(erroConsulta);
+
+                  if (estado?.bloqueado_ate > Date.now()) {
+                    return responderBloqueio(estado.bloqueado_ate);
+                  }
+
+                  return credenciaisInvalidas();
+                }
+              );
+            }
+          );
+
+          return;
+        }
+
+        // Login correto zera os erros, desde que a conta continue
+        // ativa e não tenha sido bloqueada durante a verificação.
+        db.run(
+          `UPDATE Users
+           SET tentativas_login = 0, bloqueado_ate = NULL
+           WHERE id = ?
+             AND ativo = 1
+             AND (bloqueado_ate IS NULL OR bloqueado_ate <= ?)`,
+          [user.id, agora],
+          function (erroAtualizacao) {
+            if (erroAtualizacao) return erroInterno(erroAtualizacao);
+
+            if (this.changes === 0) {
+              return res.status(403).json({
+                message: "Login não permitido. A conta foi bloqueada ou desativada.",
+                error: "LOGIN_NOT_ALLOWED"
+              });
+            }
+
+            const token = jwt.sign(
+              {
+                id: user.id,
+                email: user.email,
+                isAdmin: !!user.isAdmin
+              },
+              SECRET_KEY,
+              { expiresIn: "8h" }
+            );
+
+            return res.status(200).json({
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              isAdmin: !!user.isAdmin,
+              token: `Bearer ${token}`,
+              token_for_swagger: token,
+              expiresIn: "8h",
+              loginTime: new Date().toISOString()
+            });
+          }
+        );
+      });
+    }
+  );
 });
 
 app.post("/api/register", (req, res) => {
@@ -738,7 +804,7 @@ async function initializeTestData() {
             users.forEach((user) => {
               const userType =
                 user.email.includes("admin") ||
-                user.email.includes("biblioteca")
+                  user.email.includes("biblioteca")
                   ? "👑 Admin"
                   : "👤 User";
               console.log(`   ${userType}: ${user.email}`);

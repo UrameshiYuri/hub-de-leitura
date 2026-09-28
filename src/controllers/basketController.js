@@ -1,30 +1,30 @@
 const db = require("../../config/db");
 
-// Listar itens do carrinho do usuário
+// Listar itens do carrinho do usuário.
 const getUserBasket = (req, res) => {
-  const { userId } = req.params;
-  const requestingUserId = req.user.id;
+  const userId = Number(req.params.userId);
 
-  // Verificar se usuário pode acessar este carrinho
-  if (parseInt(userId) !== requestingUserId) {
-    return res.status(403).json({ 
-      message: "Acesso negado. Você só pode ver seu próprio carrinho." 
+  if (userId !== req.user.id) {
+    return res.status(403).json({
+      message: "Acesso negado. Você só pode ver seu próprio carrinho."
     });
   }
 
   const query = `
-    SELECT 
+    SELECT
       b.id,
       b.user_id,
       b.book_id,
       b.quantity,
       b.added_date,
-      bk.title as book_title,
-      bk.author as book_author,
+      bk.title AS book_title,
+      bk.author AS book_author,
       bk.cover_image,
-      bk.available_copies > 0 as available,
+      bk.available_copies >= b.quantity AS available,
       bk.available_copies,
-      bk.total_copies
+      bk.total_copies,
+      bk.preco_centavos,
+      b.quantity * bk.preco_centavos AS subtotal_centavos
     FROM Basket b
     INNER JOIN Books bk ON b.book_id = bk.id
     WHERE b.user_id = ?
@@ -33,176 +33,318 @@ const getUserBasket = (req, res) => {
 
   db.all(query, [userId], (err, rows) => {
     if (err) {
-      console.error('Erro ao buscar carrinho:', err);
-      return res.status(500).json({ 
-        error: "Erro ao buscar itens do carrinho.",
-        details: err.message 
+      console.error("Erro ao buscar carrinho:", err.message);
+
+      return res.status(500).json({
+        message: "Erro ao buscar itens do carrinho."
       });
     }
+
+    const precosValidos = rows.every((item) =>
+      Number.isSafeInteger(item.preco_centavos) &&
+      item.preco_centavos > 0 &&
+      Number.isSafeInteger(item.subtotal_centavos) &&
+      item.subtotal_centavos > 0
+    );
+
+    const total_centavos = precosValidos
+      ? rows.reduce((soma, item) => soma + item.subtotal_centavos, 0)
+      : null;
+    let percentual_desconto = 0;
+
+    if (total_centavos !== null) {
+      if (total_centavos > 60000) {
+        percentual_desconto = 15;
+      } else if (total_centavos >= 20000) {
+        percentual_desconto = 10;
+      }
+    }
+
+    const desconto_centavos = total_centavos === null
+      ? null
+      : Math.floor(total_centavos * percentual_desconto / 100);
+
+    const total_final_centavos = total_centavos === null
+      ? null
+      : total_centavos - desconto_centavos;
 
     res.json({
       items: rows,
       total: rows.length,
-      userId: parseInt(userId),
+      total_centavos,
+      percentual_desconto,
+      desconto_centavos,
+      total_final_centavos,
+      userId,
       summary: {
         totalItems: rows.length,
-        availableItems: rows.filter(item => item.available).length,
-        unavailableItems: rows.filter(item => !item.available).length
+        totalUnits: rows.reduce((soma, item) => soma + item.quantity, 0),
+        availableItems: rows.filter((item) => item.available).length,
+        unavailableItems: rows.filter((item) => !item.available).length
       }
     });
   });
 };
 
-// Adicionar item ao carrinho
+// Adicionar livro novo ou aumentar a quantidade existente.
 const addToBasket = (req, res) => {
-  const { userId, bookId, quantity = 1 } = req.body;
+  const { userId, bookId, quantity = 1 } = req.body || {};
   const requestingUserId = req.user.id;
 
-  // Validações básicas
-  if (!userId || !bookId) {
-    return res.status(400).json({ 
-      message: "userId e bookId são obrigatórios." 
+  if (
+    !Number.isSafeInteger(userId) || userId <= 0 ||
+    !Number.isSafeInteger(bookId) || bookId <= 0
+  ) {
+    return res.status(400).json({
+      message: "userId e bookId devem ser números inteiros positivos."
     });
   }
 
-  if (parseInt(userId) !== requestingUserId) {
-    return res.status(403).json({ 
-      message: "Acesso negado. Você só pode adicionar ao seu próprio carrinho." 
+  if (userId !== requestingUserId) {
+    return res.status(403).json({
+      message: "Acesso negado. Você só pode adicionar ao seu próprio carrinho."
     });
   }
 
-  if (quantity !== 1) {
-    return res.status(400).json({ 
-      message: "Quantidade deve ser 1 para livros." 
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
+    return res.status(400).json({
+      message: "A quantidade deve ser um número inteiro entre 1 e 10."
     });
   }
 
-  // Verificar se o livro existe e está disponível
   db.get("SELECT * FROM Books WHERE id = ?", [bookId], (err, book) => {
     if (err) {
-      console.error('Erro ao verificar livro:', err);
-      return res.status(500).json({ 
-        error: "Erro ao verificar livro.",
-        details: err.message 
+      console.error("Erro ao verificar livro:", err.message);
+
+      return res.status(500).json({
+        message: "Erro ao verificar livro."
       });
     }
 
     if (!book) {
-      return res.status(404).json({ 
-        message: "Livro não encontrado." 
+      return res.status(404).json({
+        message: "Livro não encontrado."
+      });
+    }
+
+    if (
+      !Number.isSafeInteger(book.preco_centavos) ||
+      book.preco_centavos <= 0
+    ) {
+      return res.status(400).json({
+        message: "Este livro ainda não possui um preço válido."
       });
     }
 
     if (book.available_copies <= 0) {
-      return res.status(400).json({ 
-        message: "Livro não está disponível para reserva.",
+      return res.status(400).json({
+        message: "Livro não está disponível.",
         bookTitle: book.title,
         availableCopies: book.available_copies
       });
     }
 
-    // Verificar se já está no carrinho
     db.get(
       "SELECT * FROM Basket WHERE user_id = ? AND book_id = ?",
-      [userId, bookId],
+      [requestingUserId, bookId],
       (err, existingItem) => {
         if (err) {
-          console.error('Erro ao verificar carrinho:', err);
-          return res.status(500).json({ 
-            error: "Erro ao verificar carrinho.",
-            details: err.message 
+          console.error("Erro ao verificar carrinho:", err.message);
+
+          return res.status(500).json({
+            message: "Erro ao verificar carrinho."
           });
         }
+
+        const quantidadeAtual = existingItem ? existingItem.quantity : 0;
+        const quantidadeFinal = quantidadeAtual + quantity;
+
+        if (quantidadeFinal > 10) {
+          return res.status(400).json({
+            message: "O carrinho permite no máximo 10 unidades do mesmo livro."
+          });
+        }
+
+        if (quantidadeFinal > book.available_copies) {
+          return res.status(400).json({
+            message: "Quantidade solicitada supera os exemplares disponíveis.",
+            availableCopies: book.available_copies
+          });
+        }
+
+        // Condição compartilhada pelo UPDATE e pelo INSERT.
+        // O limite considera o total antes de descontos.
+        const limiteCarrinhoSql = `
+          NOT EXISTS (
+            SELECT 1
+            FROM Basket b
+            JOIN Books bk ON bk.id = b.book_id
+            WHERE b.user_id = ?
+              AND (
+                bk.preco_centavos IS NULL
+                OR bk.preco_centavos <= 0
+              )
+          )
+          AND (
+            SELECT COALESCE(SUM(b.quantity * bk.preco_centavos), 0)
+            FROM Basket b
+            JOIN Books bk ON bk.id = b.book_id
+            WHERE b.user_id = ?
+          ) + ? * ? <= 99000
+        `;
+
+        const parametrosLimite = [
+          requestingUserId,
+          requestingUserId,
+          quantity,
+          book.preco_centavos
+        ];
+
+        let sql;
+        let parametros;
 
         if (existingItem) {
-          return res.status(400).json({ 
-            message: "Livro já está no carrinho.",
-            bookTitle: book.title,
-            addedDate: existingItem.added_date
-          });
+          sql = `
+            UPDATE Basket
+            SET quantity = quantity + ?
+            WHERE id = ?
+              AND user_id = ?
+              AND quantity + ? <= 10
+              AND quantity + ? <= ?
+              AND ${limiteCarrinhoSql}
+          `;
+
+          parametros = [
+            quantity,
+            existingItem.id,
+            requestingUserId,
+            quantity,
+            quantity,
+            book.available_copies,
+            ...parametrosLimite
+          ];
+        } else {
+          sql = `
+            INSERT INTO Basket (
+              user_id, book_id, quantity, added_date
+            )
+            SELECT ?, ?, ?, datetime('now')
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM Basket
+              WHERE user_id = ? AND book_id = ?
+            )
+            AND ${limiteCarrinhoSql}
+          `;
+
+          parametros = [
+            requestingUserId,
+            bookId,
+            quantity,
+            requestingUserId,
+            bookId,
+            ...parametrosLimite
+          ];
         }
 
-        // Adicionar ao carrinho
-        db.run(
-          "INSERT INTO Basket (user_id, book_id, quantity, added_date) VALUES (?, ?, ?, datetime('now'))",
-          [userId, bookId, quantity],
-          function (err) {
-            if (err) {
-              console.error('Erro ao adicionar ao carrinho:', err);
-              return res.status(500).json({ 
-                error: "Erro ao adicionar item ao carrinho.",
-                details: err.message 
-              });
-            }
+        db.run(sql, parametros, function (err) {
+          if (err) {
+            console.error("Erro ao salvar item:", err.message);
 
-            console.log(`✅ Item adicionado ao carrinho: User ${userId} - Book ${bookId} (${book.title})`);
-
-            res.status(201).json({
-              message: "Livro adicionado ao carrinho com sucesso.",
-              itemId: this.lastID,
-              bookTitle: book.title,
-              bookAuthor: book.author,
-              addedDate: new Date().toISOString()
+            return res.status(500).json({
+              message: "Erro ao salvar item no carrinho."
             });
           }
-        );
+
+          if (this.changes === 0) {
+            return res.status(409).json({
+              message: "Adição não permitida. Confira os preços, o estoque e os limites de 10 unidades por livro e R$ 990 por carrinho. Consulte o carrinho novamente."
+            });
+          }
+
+          if (existingItem) {
+            return res.status(200).json({
+              message: "Quantidade atualizada no carrinho.",
+              itemId: existingItem.id
+            });
+          }
+
+          return res.status(201).json({
+            message: "Livro adicionado ao carrinho com sucesso.",
+            itemId: this.lastID,
+            bookTitle: book.title,
+            bookAuthor: book.author,
+            addedDate: new Date().toISOString()
+          });
+        });
       }
     );
   });
 };
 
-// Remover item específico do carrinho
+// Remover um livro do carrinho, incluindo todas as suas unidades.
 const removeFromBasket = (req, res) => {
-  const { userId, bookId } = req.params;
-  const requestingUserId = req.user.id;
+  const userId = Number(req.params.userId);
+  const bookId = Number(req.params.bookId);
 
-  if (parseInt(userId) !== requestingUserId) {
-    return res.status(403).json({ 
-      message: "Acesso negado. Você só pode modificar seu próprio carrinho." 
+  if (
+    !Number.isSafeInteger(userId) || userId <= 0 ||
+    !Number.isSafeInteger(bookId) || bookId <= 0
+  ) {
+    return res.status(400).json({
+      message: "IDs inválidos."
     });
   }
 
-  // Buscar informações do item antes de remover
+  if (userId !== req.user.id) {
+    return res.status(403).json({
+      message: "Acesso negado. Você só pode modificar seu próprio carrinho."
+    });
+  }
+
   db.get(
-    `SELECT b.*, bk.title, bk.author 
-     FROM Basket b 
-     INNER JOIN Books bk ON b.book_id = bk.id 
+    `SELECT b.*, bk.title, bk.author
+     FROM Basket b
+     INNER JOIN Books bk ON b.book_id = bk.id
      WHERE b.user_id = ? AND b.book_id = ?`,
     [userId, bookId],
     (err, item) => {
       if (err) {
-        console.error('Erro ao buscar item:', err);
-        return res.status(500).json({ 
-          error: "Erro ao buscar item do carrinho.",
-          details: err.message 
+        console.error("Erro ao buscar item:", err.message);
+
+        return res.status(500).json({
+          message: "Erro ao buscar item do carrinho."
         });
       }
 
       if (!item) {
-        return res.status(404).json({ 
-          message: "Item não encontrado no carrinho." 
+        return res.status(404).json({
+          message: "Item não encontrado no carrinho."
         });
       }
 
-      // Remover item
       db.run(
         "DELETE FROM Basket WHERE user_id = ? AND book_id = ?",
         [userId, bookId],
         function (err) {
           if (err) {
-            console.error('Erro ao remover do carrinho:', err);
-            return res.status(500).json({ 
-              error: "Erro ao remover item do carrinho.",
-              details: err.message 
+            console.error("Erro ao remover item:", err.message);
+
+            return res.status(500).json({
+              message: "Erro ao remover item do carrinho."
             });
           }
 
-          console.log(`✅ Item removido do carrinho: User ${userId} - Book ${bookId} (${item.title})`);
+          if (this.changes === 0) {
+            return res.status(404).json({
+              message: "Item não encontrado no carrinho."
+            });
+          }
 
           res.json({
             message: "Item removido do carrinho com sucesso.",
             removedItem: {
-              bookId: parseInt(bookId),
+              bookId,
               bookTitle: item.title,
               bookAuthor: item.author
             }
@@ -213,87 +355,61 @@ const removeFromBasket = (req, res) => {
   );
 };
 
-// Limpar carrinho completo
+// Limpar todos os itens do carrinho.
 const clearBasket = (req, res) => {
-  const { userId } = req.params;
-  const requestingUserId = req.user.id;
+  const userId = Number(req.params.userId);
 
-  if (parseInt(userId) !== requestingUserId) {
-    return res.status(403).json({ 
-      message: "Acesso negado. Você só pode limpar seu próprio carrinho." 
+  if (userId !== req.user.id) {
+    return res.status(403).json({
+      message: "Acesso negado. Você só pode limpar seu próprio carrinho."
     });
   }
 
-  // Contar itens antes de limpar
-  db.get(
-    "SELECT COUNT(*) as itemCount FROM Basket WHERE user_id = ?",
+  db.run(
+    "DELETE FROM Basket WHERE user_id = ?",
     [userId],
-    (err, countResult) => {
+    function (err) {
       if (err) {
-        console.error('Erro ao contar itens:', err);
-        return res.status(500).json({ 
-          error: "Erro ao verificar carrinho.",
-          details: err.message 
+        console.error("Erro ao limpar carrinho:", err.message);
+
+        return res.status(500).json({
+          message: "Erro ao limpar carrinho."
         });
       }
 
-      const itemCount = countResult.itemCount;
-
-      if (itemCount === 0) {
-        return res.json({
-          message: "Carrinho já estava vazio.",
-          itemsRemoved: 0
-        });
-      }
-
-      // Limpar carrinho
-      db.run(
-        "DELETE FROM Basket WHERE user_id = ?",
-        [userId],
-        function (err) {
-          if (err) {
-            console.error('Erro ao limpar carrinho:', err);
-            return res.status(500).json({ 
-              error: "Erro ao limpar carrinho.",
-              details: err.message 
-            });
-          }
-
-          console.log(`✅ Carrinho limpo: User ${userId} - ${this.changes} itens removidos`);
-
-          res.json({
-            message: "Carrinho limpo com sucesso.",
-            itemsRemoved: this.changes,
-            previousItemCount: itemCount
-          });
-        }
-      );
+      res.json({
+        message: this.changes > 0
+          ? "Carrinho limpo com sucesso."
+          : "Carrinho já estava vazio.",
+        itemsRemoved: this.changes,
+        previousItemCount: this.changes
+      });
     }
   );
 };
 
-// Verificar disponibilidade dos itens do carrinho
+// Conferir se há exemplares suficientes para cada quantidade.
 const checkBasketAvailability = (req, res) => {
-  const { userId } = req.params;
-  const requestingUserId = req.user.id;
+  const userId = Number(req.params.userId);
 
-  if (parseInt(userId) !== requestingUserId) {
-    return res.status(403).json({ 
-      message: "Acesso negado." 
+  if (userId !== req.user.id) {
+    return res.status(403).json({
+      message: "Acesso negado."
     });
   }
 
   const query = `
-    SELECT 
+    SELECT
       b.book_id,
+      b.quantity,
       bk.title,
       bk.author,
       bk.available_copies,
-      bk.available_copies > 0 as available,
-      CASE 
-        WHEN bk.available_copies > 0 THEN 'available'
+      bk.available_copies >= b.quantity AS available,
+      CASE
+        WHEN bk.available_copies >= b.quantity THEN 'available'
         ELSE 'unavailable'
-      END as status
+      END AS status
     FROM Basket b
     INNER JOIN Books bk ON b.book_id = bk.id
     WHERE b.user_id = ?
@@ -301,23 +417,23 @@ const checkBasketAvailability = (req, res) => {
 
   db.all(query, [userId], (err, items) => {
     if (err) {
-      console.error('Erro ao verificar disponibilidade:', err);
-      return res.status(500).json({ 
-        error: "Erro ao verificar disponibilidade.",
-        details: err.message 
+      console.error("Erro ao verificar disponibilidade:", err.message);
+
+      return res.status(500).json({
+        message: "Erro ao verificar disponibilidade."
       });
     }
 
-    const available = items.filter(item => item.available);
-    const unavailable = items.filter(item => !item.available);
+    const available = items.filter((item) => item.available);
+    const unavailable = items.filter((item) => !item.available);
 
     res.json({
       total: items.length,
       available: available.length,
       unavailable: unavailable.length,
       canProceedToReservation: unavailable.length === 0,
-      items: items,
-      unavailableBooks: unavailable.map(item => ({
+      items,
+      unavailableBooks: unavailable.map((item) => ({
         bookId: item.book_id,
         title: item.title,
         author: item.author

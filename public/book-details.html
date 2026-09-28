@@ -246,79 +246,88 @@
 
 
             function setupAddToCartButton() {
-                const addToCartBtn = document.getElementById('add-to-cart-btn');
+                const botoes = Array.from(
+                    document.querySelectorAll("#add-to-cart-btn, #cta-add-to-cart")
+                );
 
-                if (addToCartBtn) {
-                    addToCartBtn.addEventListener('click', function () {
-                        // Adicionar livro à cesta
-                        const bookData = {
-                            id: currentBook.id,
-                            title: currentBook.title,
-                            author: currentBook.author,
-                            category: currentBook.category,
-                            cover_image: currentBook.cover_image,
-                            isbn: currentBook.isbn,
-                            available_copies: currentBook.availability.available_copies
-                        };
+                let enviando = false;
 
-                        // Verificar se a função addToCart existe 
-                        if (typeof window.addToCart === 'function') {
-                            const success = window.addToCart(bookData);
+                async function adicionarLivro() {
+                    if (enviando) return;
 
-                            if (success) {
-                                // Mostrar botão para ir à cesta
-                                addToCartBtn.innerHTML = '<i class="fas fa-check"></i> Adicionado!';
-                                addToCartBtn.disabled = true;
+                    const token = localStorage.getItem("authToken");
+                    const userId = Number(localStorage.getItem("userId"));
+                    const bookId = Number(currentBook?.id);
 
-                                // Mostrar botão de ir para cesta
-                                setTimeout(() => {
-                                    addToCartBtn.innerHTML = '<i class="fas fa-shopping-basket"></i> Ir para Cesta';
-                                    addToCartBtn.disabled = false;
-                                    addToCartBtn.onclick = function () {
-                                        window.location.href = '/basket.html';
-                                    };
-                                }, 2000);
-                            }
-                        } else {
-                            // Fallback: salvar no localStorage diretamente
-                            const cart = JSON.parse(localStorage.getItem('bookCart') || '[]');
+                    if (!token || !Number.isSafeInteger(userId) || userId <= 0) {
+                        showAlert("Faça login para adicionar livros.", "alert-warning");
+                        return;
+                    }
 
-                            // Verificar se já está na cesta
-                            const existingIndex = cart.findIndex(item => item.id === bookData.id);
-                            if (existingIndex !== -1) {
-                                showAlert('Este livro já está na sua cesta!', 'alert-warning');
-                                return;
-                            }
+                    if (!Number.isSafeInteger(bookId) || bookId <= 0) {
+                        showAlert("Livro inválido.", "alert-danger");
+                        return;
+                    }
 
-                            // Adicionar à cesta
-                            cart.push(bookData);
-                            localStorage.setItem('bookCart', JSON.stringify(cart));
+                    enviando = true;
 
-                            showAlert('Livro adicionado à cesta com sucesso!', 'alert-success');
+                    const estados = botoes.map(botao => ({
+                        botao,
+                        texto: botao.innerHTML,
+                        desabilitado: botao.disabled
+                    }));
 
-                            // Atualizar visual do botão
-                            addToCartBtn.innerHTML = '<i class="fas fa-check"></i> Adicionado!';
-                            addToCartBtn.disabled = true;
-
-                            // Atualizar contador no header
-                            if (typeof window.updateCartCount === 'function') {
-                                window.updateCartCount();
-                            }
-
-                            setTimeout(() => {
-                                addToCartBtn.innerHTML = '<i class="fas fa-shopping-basket"></i> Ir para Cesta';
-                                addToCartBtn.disabled = false;
-                                addToCartBtn.onclick = function () {
-                                    window.location.href = '/basket.html';
-                                };
-                            }, 2000);
-                        }
+                    botoes.forEach(botao => {
+                        botao.disabled = true;
+                        botao.textContent = "Adicionando...";
                     });
+
+                    try {
+                        const resposta = await fetch("/api/basket", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                Authorization: token
+                            },
+                            body: JSON.stringify({
+                                userId,
+                                bookId,
+                                quantity: 1
+                            })
+                        });
+
+                        const dados = await resposta.json();
+
+                        if (!resposta.ok) {
+                            throw new Error(
+                                dados.message || "Não foi possível adicionar o livro."
+                            );
+                        }
+
+                        showAlert(
+                            "Uma unidade adicionada à cesta!",
+                            "alert-success"
+                        );
+
+                        if (typeof window.updateCartCount === "function") {
+                            await window.updateCartCount();
+                        }
+                    } catch (erro) {
+                        showAlert(erro.message, "alert-danger");
+                    } finally {
+                        estados.forEach(({ botao, texto, desabilitado }) => {
+                            botao.innerHTML = texto;
+                            botao.disabled = desabilitado;
+                        });
+
+                        enviando = false;
+                    }
                 }
+
+                botoes.forEach(botao => {
+                    botao.onclick = adicionarLivro;
+                });
             }
-
-
-
             function showError() {
                 document.getElementById('loading').classList.add('d-none');
                 document.getElementById('error-section').classList.remove('d-none');

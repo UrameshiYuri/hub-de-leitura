@@ -161,7 +161,6 @@ curl -X GET http://localhost:3000/api/books \
 3. Compartilhe casos de teste interessantes
 4. Contribua com exemplos de automação
 
-
 ### Resetar Banco de Dados
 
 ```bash
@@ -211,7 +210,6 @@ kill -9 PID_DO_PROCESSO
 - [Jest](https://jestjs.io/) - Para testes automatizados
 - [Newman](https://github.com/postmanlabs/newman) - CLI do Postman
 
-
 ### Uso Permitido
 
 - ✅ Uso educacional e acadêmico
@@ -234,11 +232,142 @@ Desenvolvido com ❤️ para a comunidade de **Quality Assurance**.
 **Contribuidores:**
 
 - Fábio Araújo
-    - [Repositório](https://github.com/fabioaraujoqa)
-    - [Linkedin](https://www.linkedin.com/in/fabio10/)
+  - [Repositório](https://github.com/fabioaraujoqa)
+  - [Linkedin](https://www.linkedin.com/in/fabio10/)
 
 ---
 
 ### 🚀 **Bons Testes!**
 
-*"A qualidade nunca é um acidente; ela é sempre o resultado de um esforço inteligente."* - John Ruskin
+_"A qualidade nunca é um acidente; ela é sempre o resultado de um esforço inteligente."_ - John Ruskin
+
+## Funcionalidades desenvolvidas e testes
+
+Implementações realizadas no Hub de Leitura, adaptando os exercícios
+de cupons, carrinho e login ao projeto.
+
+### API de cupons
+
+Concluído:
+
+- Cadastro de cupons por administrador.
+- Listagem de cupons e consulta por ID.
+- Validação dos campos obrigatórios.
+- Rejeição de códigos de cupom duplicados.
+- Cadastro de desconto percentual ou fixo por produto.
+- Restrição de acesso às operações administrativas.
+- Aplicação de desconto percentual com validação de valor mínimo,
+  validade e situação do cupom.
+
+O cadastro de desconto fixo está disponível. Sua aplicação por produto
+não foi integrada ao carrinho.
+
+### Carrinho de livros
+
+Concluído:
+
+- Adição, consulta, remoção de livros e limpeza do carrinho pela API.
+- Acesso restrito ao carrinho do próprio usuário.
+- Validação de preço e disponibilidade.
+- Limite de 10 unidades por livro.
+- Limite de R$ 990,00 no total antes do desconto.
+- Desconto automático conforme o total:
+  - Abaixo de R$ 200,00: sem desconto.
+  - De R$ 200,00 até R$ 600,00: 10%.
+  - Acima de R$ 600,00: 15%.
+- Valores monetários calculados em centavos.
+- Integração do catálogo e da página de detalhes com a API.
+- Exibição de quantidade, subtotal, desconto e total final na cesta.
+- Remoção de livros e limpeza da cesta pelo site.
+
+O desconto do carrinho é automático e não exige informar um cupom.
+
+### Login
+
+Concluído:
+
+- Autenticação com email e senha.
+- Emissão de token JWT.
+- Login permitido apenas para usuários ativos.
+- Mensagem de erro para credenciais incorretas.
+- Bloqueio por 15 minutos após três erros de senha.
+- Recusa de novos logins durante o bloqueio, mesmo com senha correta.
+- Liberação após o vencimento do bloqueio.
+- Contagem de erros zerada após login bem-sucedido.
+
+O bloqueio impede novos logins. Tokens emitidos anteriormente
+continuam válidos até sua expiração.
+
+### Testes automatizados
+
+Ferramentas utilizadas:
+
+- Mocha.
+- Pactum.
+- SQLite para preparar e remover a conta temporária dos testes de login.
+
+Com o banco preparado, inicie o servidor:
+
+    npm start
+
+Em outro terminal, execute cada conjunto:
+
+    npx mocha "API/Cupons/**/*.test.js"
+    npx mocha "API/Carrinho/**/*.test.js"
+    npx mocha "API/Login/**/*.test.js"
+
+Resultados registrados nas execuções individuais:
+
+| Funcionalidade | Testes passando |
+| -------------- | --------------- |
+| Cupons         | 19              |
+| Carrinho       | 10              |
+| Login          | 6               |
+| Total          | 35              |
+
+Para executar os três conjuntos juntos:
+
+    npx mocha "API/Cupons/**/*.test.js" "API/Carrinho/**/*.test.js" "API/Login/**/*.test.js"
+
+Os testes devem ser executados em ambiente local de desenvolvimento.
+Os testes de carrinho limpam o carrinho da conta utilizada.
+Os testes de login criam uma conta temporária e a removem ao finalizar.
+
+### Preparação dos dados
+
+As funcionalidades dependem das alterações de banco feitas durante
+o desenvolvimento:
+
+- Tabela de cupons com tipo de desconto, valor e descrição.
+- Coluna preco_centavos na tabela Books.
+- Colunas ativo, tentativas_login e bloqueado_ate na tabela Users.
+
+Para adicionar os campos de login em um banco existente:
+
+    node scripts/adicionar_campos_login.js
+
+Os testes de carrinho utilizam os livros de teste:
+
+| ID  | Livro                                      | Preço     |
+| --- | ------------------------------------------ | --------- |
+| 3   | O Pequeno Príncipe                         | R$ 100,00 |
+| 24  | As Grandes Sagas da Turma da Mônica Vol. 9 | R$ 99,00  |
+
+Os cenários de limite dependem de esses livros terem pelo menos
+10 exemplares disponíveis.
+
+### Escopo e pendências
+
+Os requisitos de API e regras de negócio descritos acima foram
+implementados e testados.
+
+Permanecem fora desta entrega:
+
+- Finalização de compra ou adaptação completa do fluxo de reservas.
+- Aplicação de desconto fixo por produto no carrinho.
+- Ajuste da atualização imediata do contador na página de detalhes:
+  foi observado que, em alguns testes, ele atualizou apenas após
+  recarregar a página.
+
+Arquivos de banco locais (.db), backups, tokens e senhas reais
+não devem ser incluídos no repositório.
