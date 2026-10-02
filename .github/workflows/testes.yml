@@ -83,12 +83,38 @@ jobs:
       - name: Executar testes Web com relatório
         if: ${{ !cancelled() && steps.servidor.outcome == 'success' }}
         run: npm run test:ui
+      - name: Instalar K6
+        id: k6
+        if: ${{ !cancelled() && steps.servidor.outcome == 'success' }}
+        uses: grafana/setup-k6-action@v1
+        with:
+          k6-version: "2.2.0"
+
+      - name: Testar performance do catálogo
+        if: ${{ !cancelled() && steps.servidor.outcome == 'success' && steps.k6.outcome == 'success' }}
+        env:
+          K6_WEB_DASHBOARD: "true"
+          K6_WEB_DASHBOARD_PORT: "-1"
+          K6_WEB_DASHBOARD_EXPORT: relatorios/performance/catalogo.html
+        run: |
+          mkdir -p relatorios/performance
+          k6 run performance/catalogo.js
+
+      - name: Testar performance da busca
+        if: ${{ !cancelled() && steps.servidor.outcome == 'success' && steps.k6.outcome == 'success' }}
+        env:
+          K6_WEB_DASHBOARD: "true"
+          K6_WEB_DASHBOARD_PORT: "-1"
+          K6_WEB_DASHBOARD_EXPORT: relatorios/performance/busca.html
+        run: |
+          mkdir -p relatorios/performance
+          k6 run performance/busca.js
 
       - name: Salvar relatórios e evidências
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: relatorios-api-web
+          name: relatorios-automacoes
           path: |
             relatorios/
             test-results/
