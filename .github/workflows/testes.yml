@@ -1,0 +1,90 @@
+name: Testes de API e Web
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NODE_ENV: test
+      PORT: "3000"
+      JWT_SECRET: chave-exclusiva-do-ambiente-de-testes-ci
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v6
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Instalar Chromium e dependências
+        run: npx playwright install --with-deps chromium
+
+      - name: Preparar banco de testes
+        run: |
+          mkdir -p database
+          rm -f database/biblioteca.db database/biblioteca.db-wal database/biblioteca.db-shm database/biblioteca.db-journal
+
+          node scripts/init_db.js
+          node scripts/adicionar_campos_login.js
+          node scripts/adicionar_preco_livros.js
+          node scripts/criar_tabela_cupons.js
+          node scripts/Migrar_cupons.js
+          node scripts/preparar_dados_ci.js
+
+      - name: Iniciar servidor
+        id: servidor
+        run: |
+          mkdir -p relatorios
+          npm start > relatorios/servidor.log 2>&1 &
+          SERVER_PID=$!
+
+          for tentativa in {1..30}; do
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              cat relatorios/servidor.log
+              exit 1
+            fi
+
+            if curl --fail --silent http://localhost:3000/api/books > /dev/null; then
+              echo "Servidor pronto."
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "O servidor não ficou disponível."
+          cat relatorios/servidor.log
+          exit 1
+
+      - name: Executar testes de API com relatório
+        run: npm run test:api:report
+
+      - name: Executar testes Web com relatório
+        if: ${{ !cancelled() && steps.servidor.outcome == 'success' }}
+        run: npm run test:ui
+
+      - name: Salvar relatórios e evidências
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorios-api-web
+          path: |
+            relatorios/
+            test-results/
+          retention-days: 14
+          if-no-files-found: warn

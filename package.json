@@ -8,7 +8,11 @@
     "db": "node scripts/init_db.js",
     "dev": "nodemon src/server.js",
     "setup": "node setup.js",
-    "test": "mocha ./API/**/*.test.js"
+    "test": "mocha \"./API/**/*.test.js\"",
+    "test:api": "mocha \"API/**/*.contrato.test.js\"",
+    "test:api:report": "mocha \"API/**/*.contrato.test.js\" --reporter mochawesome --reporter-options reportDir=relatorios/api,reportFilename=resultado-api,inline=true",
+    "test:ui": "playwright test",
+    "report:ui": "playwright show-report relatorios/ui"
   },
   "keywords": [],
   "author": "",
@@ -29,8 +33,10 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "jest": "^29.7.0",
     "mocha": "^11.7.5",
+    "mochawesome": "^8.1.1",
     "nodemon": "^3.1.10",
     "open": "^10.2.0",
     "pactum": "^3.9.1",
