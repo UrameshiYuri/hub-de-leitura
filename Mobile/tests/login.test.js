@@ -38,6 +38,7 @@ describe("Login no Android", function () {
                 return {
                     url: window.location.href,
                     paginaCarregada: document.readyState,
+                    interacao: window.diagnosticoLogin || null,
                     scriptLoginInicializado:
                         typeof window.fillLogin === "function",
                     email: email ? email.value : null,

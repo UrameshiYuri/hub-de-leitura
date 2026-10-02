@@ -45,6 +45,47 @@ class LoginPage {
             timeout: 15000,
             timeoutMsg: "O botão de login está coberto ou indisponível."
         });
+        await this.driver.execute(() => {
+            window.diagnosticoLogin = {
+                eventos: [],
+                erros: []
+            };
+
+            const formulario = document.getElementById("login-form");
+            const botao = document.getElementById("login-btn");
+
+            window.diagnosticoLogin.botaoLigadoAoFormulario =
+                botao.form === formulario;
+
+            document.addEventListener("click", (evento) => {
+                const registro = {
+                    tipo: "click",
+                    elemento: evento.target.tagName,
+                    id: evento.target.id,
+                    cancelado: false
+                };
+
+                window.diagnosticoLogin.eventos.push(registro);
+
+                setTimeout(() => {
+                    registro.cancelado = evento.defaultPrevented;
+                }, 0);
+            }, { capture: true, once: true });
+
+            formulario.addEventListener("submit", () => {
+                window.diagnosticoLogin.eventos.push({
+                    tipo: "submit"
+                });
+            }, { capture: true, once: true });
+
+            window.addEventListener("error", (evento) => {
+                window.diagnosticoLogin.erros.push(evento.message);
+            });
+
+            window.addEventListener("unhandledrejection", (evento) => {
+                window.diagnosticoLogin.erros.push(String(evento.reason));
+            });
+        });
 
         await botao.click();
     }
