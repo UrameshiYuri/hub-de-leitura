@@ -87,7 +87,20 @@ class LoginPage {
             });
         });
 
-        await botao.click();
+        await this.driver
+            .action("pointer", {
+                parameters: { pointerType: "touch" }
+            })
+            .move({
+                origin: botao,
+                x: 0,
+                y: 0,
+                duration: 0
+            })
+            .down({ button: 0 })
+            .pause(100)
+            .up({ button: 0 })
+            .perform();
     }
 
     async aguardarDashboard() {
