@@ -32,8 +32,21 @@ class LoginPage {
     async entrar(email, senha) {
         await this.email.setValue(email);
         await this.senha.setValue(senha);
-        await this.botaoEntrar.scrollIntoView();
-        await this.botaoEntrar.click();
+
+        const botao = await this.botaoEntrar;
+
+        await botao.scrollIntoView({
+            block: "center",
+            inline: "center",
+            behavior: "auto"
+        });
+
+        await botao.waitForClickable({
+            timeout: 15000,
+            timeoutMsg: "O botão de login está coberto ou indisponível."
+        });
+
+        await botao.click();
     }
 
     async aguardarDashboard() {
