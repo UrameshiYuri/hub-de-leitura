@@ -19,6 +19,53 @@ describe("Login no Android", function () {
             await driver.deleteSession();
         }
     });
+    afterEach(async function () {
+        if (!driver || this.currentTest.state !== "failed") return;
+
+        const fs = require("node:fs");
+        const pasta = "relatorios/mobile";
+        const nome = `falha-${Date.now()}`;
+
+        fs.mkdirSync(pasta, { recursive: true });
+
+        try {
+            const diagnostico = await driver.execute(() => {
+                const email = document.getElementById("email");
+                const senha = document.getElementById("password");
+                const botao = document.getElementById("login-btn");
+                const alerta = document.getElementById("alert-container");
+
+                return {
+                    url: window.location.href,
+                    paginaCarregada: document.readyState,
+                    scriptLoginInicializado:
+                        typeof window.fillLogin === "function",
+                    email: email ? email.value : null,
+                    emailMarcadoInvalido:
+                        email ? email.classList.contains("is-invalid") : null,
+                    tamanhoSenha: senha ? senha.value.length : null,
+                    botaoDesabilitado: botao ? botao.disabled : null,
+                    textoBotao: botao ? botao.textContent.trim() : null,
+                    alerta: alerta ? alerta.textContent.trim() : null
+                };
+            });
+
+            console.log("DIAGNÓSTICO MOBILE:", diagnostico);
+
+            fs.writeFileSync(
+                `${pasta}/${nome}.json`,
+                JSON.stringify(diagnostico, null, 2)
+            );
+        } catch (erro) {
+            console.error("Erro ao coletar diagnóstico:", erro.message);
+        }
+
+        try {
+            await driver.saveScreenshot(`${pasta}/${nome}.png`);
+        } catch (erro) {
+            console.error("Erro ao capturar tela:", erro.message);
+        }
+    });
 
     it("Deve permitir login de usuário ativo pelo Chrome Android", async function () {
         await login.abrir();
